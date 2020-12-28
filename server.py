@@ -41,7 +41,6 @@ logger.addHandler(ch)
 class Coop(object):
     MAX_MANUAL_MODE_TIME = 60 * 60
     MAX_MOTOR_ON = 45
-    TEMP_INTERVAL = 60 * 5
     TIMEZONE_CITY = 'Boston'
     AFTER_SUNSET_DELAY = 60
     AFTER_SUNRISE_DELAY = 3 * 60
@@ -55,31 +54,22 @@ class Coop(object):
     PIN_BUTTON_DOWN = 19
     PIN_SENSOR_TOP = 20
     PIN_SENSOR_BOTTOM = 21
-    PIN_MOTOR_ENABLE = 18
-    PIN_MOTOR_A = 12
-    PIN_MOTOR_B = 16
-
-    PIN_TEMP_WATER = 4 # Can't change
-    PIN_TEMP1 = 22
-    PIN_TEMP2 = 6
+    PIN_MOTOR_ENABLE = 25
+    PIN_MOTOR_A = 24
+    PIN_MOTOR_B = 23
 
     def __init__(self):
         self.door_status = Coop.UNKNOWN
-        self.started_motor = None 
+        self.started_motor = None
         self.direction = Coop.IDLE
         self.door_mode = Coop.AUTO
         self.manual_mode_start = 0
-        self.temp_water = 0
-        self.temp1 = 0
-        self.temp2 = 0
-        self.humidity1 = 0
-        self.humidity2 = 0
         self.second_chance = True
         self.cache = {}
 
-        self.mail_key = os.environ.get('MAILGUN_KEY') or exit('You need a key set')
-        self.mail_url = os.environ.get('MAILGUN_URL') or exit('You need a key set')
-        self.mail_recipient = os.environ.get('MAILGUN_RECIPIENT') or exit('You need a key set')
+        #self.mail_key = os.environ.get('MAILGUN_KEY') or exit('You need a key set')
+        #self.mail_url = os.environ.get('MAILGUN_URL') or exit('You need a key set')
+        #self.mail_recipient = os.environ.get('MAILGUN_RECIPIENT') or exit('You need a key set')
 
         try:
             base_dir = '/sys/bus/w1/devices/'
@@ -95,13 +85,10 @@ class Coop(object):
 
         t1 = Thread(target = self.checkTriggers)
         t2 = Thread(target = self.checkTime)
-        t3 = Thread(target = self.readTemps)
         t1.setDaemon(True)
         t2.setDaemon(True)
-        t3.setDaemon(True)
         t1.start()
         t2.start()
-        t3.start()
 
         host = 'localhost'
         port = 55567
@@ -133,7 +120,6 @@ class Coop(object):
 
     def setupPins(self):
         GPIO.setmode(GPIO.BCM)
-
         GPIO.setup(Coop.PIN_MOTOR_ENABLE, GPIO.OUT)
         GPIO.setup(Coop.PIN_MOTOR_A, GPIO.OUT)
         GPIO.setup(Coop.PIN_MOTOR_B, GPIO.OUT)
@@ -181,17 +167,16 @@ class Coop(object):
         if (top == Coop.TRIGGERED):
             logger.info("Door is open")
             self.door_status = Coop.OPEN
-            self.sendEmail('Coop door is OPEN', 'Yay!')
+            #self.sendEmail('Coop door is OPEN', 'Yay!')
         elif (bottom == Coop.TRIGGERED):
             logger.info("Door is closed")
             self.door_status = Coop.CLOSED
-            self.sendEmail('Coop door is CLOSED', 'Yay!')
+            #self.sendEmail('Coop door is CLOSED', 'Yay!')
         else:
             logger.info("Door is in an unknown state")
             self.door_status = Coop.UNKNOWN
-
             payload = {'status': self.door_status, 'ts': datetime.datetime.now() }
-            self.postData('door', payload)
+            #self.postData('door', payload)
 
     def emergencyStopDoor(self, reason):
         ## Just shut it off no matter what
@@ -203,8 +188,9 @@ class Coop(object):
         self.started_motor = None
         self.changeDoorMode(Coop.HALT)
         self.stopDoor(0)
-        self.sendEmail('Coop Emergency STOP', reason)
+        #self.sendEmail('Coop Emergency STOP', reason)
 
+    """
     def sendEmail(self, subject, content):
         logger.info("Sending email: %s" % subject)
         try:
@@ -224,6 +210,7 @@ class Coop(object):
             r = requests.post("http://ryandetzel.com:3000/api/" + endpoint, data=payload)
         except Exception as e:
             logger.error(e)
+    """
 
     def checkTime(self):
         while True:
@@ -232,7 +219,7 @@ class Coop(object):
                 sun = self.city.sun(date=datetime.datetime.now(), local=True)
 
                 after_sunset = sun["sunset"] + datetime.timedelta(minutes = Coop.AFTER_SUNSET_DELAY)
-                after_sunrise = sun["sunrise"] + datetime.timedelta(minutes = Coop.AFTER_SUNRISE_DELAY) 
+                after_sunrise = sun["sunrise"] + datetime.timedelta(minutes = Coop.AFTER_SUNRISE_DELAY)
 
                 if (current < after_sunrise or current > after_sunset) and self.door_status != Coop.CLOSED and self.direction != Coop.DOWN:
                     logger.info("Door should be closed based on time of day")
@@ -247,66 +234,6 @@ class Coop(object):
                     self.openDoor()
             time.sleep(1)
 
-    def readTempRaw(self):
-        f = open(self.device_file, 'r')
-        lines = f.readlines()
-        f.close()
-        return lines
-
-    def waterTemp(self):
-        if self.device_file is None:
-            return
-        lines = self.readTempRaw()
-        while lines[0].strip()[-3:] != 'YES':
-            time.sleep(0.2)
-            lines = self.readTempRaw()
-        equals_pos = lines[1].find('t=')
-        if equals_pos != -1:
-            temp_string = lines[1][equals_pos+2:]
-            temp_c = float(temp_string) / 1000.0
-            temp_f = temp_c * 9.0 / 5.0 + 32.0
-            self.temp_water = temp_f
-            logger.info("Water temp: %f" % temp_f)
-
-
-            payload = {'name': 'water', 'temperature': temp_f, 'humidity': 0, 'ts': datetime.datetime.now() }
-            self.postData('temperature', payload)
-
-    def tempForPin(self, pin):
-        retries = 3
-        humidity, temperature = Adafruit_DHT.read_retry(Adafruit_DHT.AM2302, pin)
-        while (humidity is None or temperature is None) and retries > 0:
-            time.sleep(1)
-            humidity, temperature = Adafruit_DHT.read_retry(Adafruit_DHT.AM2302, pin)
-            retries -= 1
-
-        if humidity is not None and temperature is not None:
-            temp_f = temperature * 9.0 / 5.0 + 32.0
-            #if cache[pin] and abs(cache[pin] - temp_f) > 20:
-            #    retries -= 1
-            #    continue
-            logger.info('Temp={0:0.1f}*F  Humidity={1:0.1f}%'.format(temp_f, humidity))
-            return temp_f, humidity
-
-        logger.error('Failed to get reading temp. Try again!')
-        return (0, 0)
-
-    def otherTemps(self):
-        (self.temp1, self.humidity1) = self.tempForPin(Coop.PIN_TEMP1)
-        (self.temp2, self.humidity2) = self.tempForPin(Coop.PIN_TEMP2)
-        
-        ts = datetime.datetime.now()
-        payload = {'name': 'temp1', 'temperature': self.temp1, 'humidity': self.humidity1, 'ts': ts}
-        self.postData('temperature', payload)
-
-        payload = {'name': 'temp2', 'temperature': self.temp2, 'humidity': self.humidity2, 'ts': ts }
-        self.postData('temperature', payload)
-
-    def readTemps(self):
-        while True:
-            self.waterTemp()
-            self.otherTemps()
-            time.sleep(Coop.TEMP_INTERVAL)
 
     def currentTriggerStatus(self):
         bottom = GPIO.input(Coop.PIN_SENSOR_BOTTOM)
