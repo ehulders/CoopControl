@@ -3,7 +3,6 @@ import logging
 import requests
 from socket import *
 from threading import Thread
-import thread
 import pytz
 import time
 import sys
@@ -41,7 +40,7 @@ logger.addHandler(ch)
 class Coop(object):
     MAX_MANUAL_MODE_TIME = 60 * 60
     MAX_MOTOR_ON = 45
-    TIMEZONE_CITY = 'Boston'
+    TIMEZONE_CITY = 'Seattle'
     AFTER_SUNSET_DELAY = 60
     AFTER_SUNRISE_DELAY = 3 * 60
     SECOND_CHANCE_DELAY = 60 * 10
@@ -108,7 +107,7 @@ class Coop(object):
             try:
                 logger.info("Server is listening for connections\n")
                 clientsocket, clientaddr = serversocket.accept()
-                thread.start_new_thread(self.handler, (clientsocket, clientaddr))
+                #thread.start_new_thread(self.handler, (clientsocket, clientaddr))
             except KeyboardInterrupt:
                 break
             time.sleep(0.01)
