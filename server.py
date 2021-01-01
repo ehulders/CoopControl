@@ -3,6 +3,7 @@ import logging
 import requests
 from socket import *
 from threading import Thread
+import _thread as thread
 import pytz
 import time
 import sys
@@ -12,7 +13,7 @@ import datetime
 import RPi.GPIO as GPIO
 from astral import Astral
 
-# Hold either button for 2 seconds to switch modes
+# Hold either button for  seconds to switch modes
 # In auto buttons Stop for 60 seconds. Again, continues
 # In manual, left goes up assuming it's not up. right goes down assuming
 #  any button while moving stops it
@@ -41,8 +42,8 @@ class Coop(object):
     MAX_MANUAL_MODE_TIME = 60 * 60
     MAX_MOTOR_ON = 45
     TIMEZONE_CITY = 'Seattle'
-    AFTER_SUNSET_DELAY = 60
-    AFTER_SUNRISE_DELAY = 3 * 60
+    AFTER_SUNSET_DELAY = 30
+    AFTER_SUNRISE_DELAY = 30
     SECOND_CHANCE_DELAY = 60 * 10
     IDLE = UNKNOWN = NOT_TRIGGERED = AUTO = 0
     UP = OPEN = TRIGGERED = MANUAL = 1
@@ -63,7 +64,7 @@ class Coop(object):
         self.direction = Coop.IDLE
         self.door_mode = Coop.AUTO
         self.manual_mode_start = 0
-        self.second_chance = True
+        self.second_chance = False
         self.cache = {}
 
         #self.mail_key = os.environ.get('MAILGUN_KEY') or exit('You need a key set')
@@ -100,14 +101,14 @@ class Coop(object):
         self.changeDoorMode(Coop.AUTO)
         self.stopDoor(0)
 
-        GPIO.add_event_detect(Coop.PIN_BUTTON_UP, GPIO.RISING, callback=self.buttonPress, bouncetime=200)
-        GPIO.add_event_detect(Coop.PIN_BUTTON_DOWN, GPIO.RISING, callback=self.buttonPress, bouncetime=200)
+        GPIO.add_event_detect(Coop.PIN_BUTTON_UP, GPIO.FALLING, callback=self.buttonPress, bouncetime=200)
+        GPIO.add_event_detect(Coop.PIN_BUTTON_DOWN, GPIO.FALLING, callback=self.buttonPress, bouncetime=200)
 
         while True:
             try:
                 logger.info("Server is listening for connections\n")
                 clientsocket, clientaddr = serversocket.accept()
-                #thread.start_new_thread(self.handler, (clientsocket, clientaddr))
+                thread.start_new_thread(self.handler, (clientsocket, clientaddr))
             except KeyboardInterrupt:
                 break
             time.sleep(0.01)
@@ -242,6 +243,7 @@ class Coop(object):
     def checkTriggers(self):
         while True:
             (top, bottom) = self.currentTriggerStatus()
+ 
             if (self.direction == Coop.UP and top == Coop.TRIGGERED):
                 logger.info("Top sensor triggered")
                 self.stopDoor(0)
@@ -254,12 +256,9 @@ class Coop(object):
                 if (datetime.datetime.now() - self.started_motor).seconds > Coop.MAX_MOTOR_ON:
                     self.emergencyStopDoor('Motor ran too long')
 
-            time.sleep(0.01)
+            time.sleep(1)
 
     def changeDoorMode(self, new_mode):
-        if new_mode == self.door_mode:
-            logger.info("Already in that mode")
-            return
 
         if new_mode == Coop.AUTO:
             logger.info("Entered auto mode")
@@ -276,29 +275,27 @@ class Coop(object):
             t2.start()
 
     def buttonPress(self, button):
-        waiting = True
-        start = end = int(round(time.time() * 1000))
+        start = int(round(time.time() * 1000))
 
-        while GPIO.input(button) and waiting:
-            end = int(round(time.time() * 1000))
-            if end - start >= 2000:
-                if self.door_mode == Coop.AUTO:
-                    self.changeDoorMode(Coop.MANUAL)
-                else:
-                    self.changeDoorMode(Coop.AUTO)
-                time.sleep(2)
-                waiting = False
-                return
-            time.sleep(0.1)
+        while GPIO.input(button) == 0:
+            pass
 
-        # Quick touch, what mode?
-        if self.door_mode == Coop.MANUAL:
-            if self.direction != Coop.IDLE:
-                self.stopDoor(0)
-            elif (button == Coop.PIN_BUTTON_UP):
-                self.openDoor()
+        end = int(round(time.time() * 1000))
+
+        if end - start > 4000:
+            if self.door_mode == Coop.AUTO:
+                self.changeDoorMode(Coop.MANUAL)
             else:
-                self.closeDoor()
+                self.changeDoorMode(Coop.AUTO)
+        
+        if self.door_mode == Coop.MANUAL:
+            if end - start < 4000:
+                if self.direction != Coop.IDLE:
+                    self.stopDoor(0)
+                elif (button == Coop.PIN_BUTTON_UP):
+                    self.openDoor()
+                else:
+                    self.closeDoor()
 
     def secondChance(self):
         logger.info("Starting second chance timer")
@@ -323,14 +320,14 @@ class Coop(object):
 
 
     def handler(self, clientsocket, clientaddr):
-        #logger.info("Accepted connection from: %s " % clientaddr)
+        logger.info("Accepted connection from: {}".format(clientaddr))
 
         while True:
             data = clientsocket.recv(1024)
             if not data:
                 break
             else:
-                data = data.strip()
+                data = data.strip().decode("utf-8") 
                 if (data == 'stop'):
                     self.changeDoorMode(Coop.MANUAL)
                     self.stopDoor(0)
