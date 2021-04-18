@@ -245,10 +245,10 @@ class Coop(object):
             (top, bottom) = self.currentTriggerStatus()
             if (self.direction == Coop.UP and top == Coop.TRIGGERED):
                 logger.info("Top sensor triggered")
-                self.stopDoor(0)
+                self.stopDoor(2)
             if (self.direction == Coop.DOWN and bottom == Coop.TRIGGERED):
                 logger.info("Bottom sensor triggered")
-                self.stopDoor(1)
+                self.stopDoor(2)
 
             # Check for issues
             if self.started_motor is not None:
