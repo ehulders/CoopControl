@@ -42,18 +42,18 @@ class Coop(object):
     MAX_MANUAL_MODE_TIME = 60 * 60
     MAX_MOTOR_ON = 45
     TIMEZONE_CITY = 'Seattle'
-    AFTER_SUNSET_DELAY = 30
-    AFTER_SUNRISE_DELAY = 30
+    AFTER_SUNSET_DELAY = 10
+    AFTER_SUNRISE_DELAY = 0
     SECOND_CHANCE_DELAY = 60 * 10
     IDLE = UNKNOWN = NOT_TRIGGERED = AUTO = 0
     UP = OPEN = TRIGGERED = MANUAL = 1
     DOWN = CLOSED = HALT = 2
 
     PIN_LED = 5
-    PIN_BUTTON_UP = 13
-    PIN_BUTTON_DOWN = 19
-    PIN_SENSOR_TOP = 20
-    PIN_SENSOR_BOTTOM = 21
+    PIN_BUTTON_UP = 4
+    PIN_BUTTON_DOWN = 22
+    PIN_SENSOR_TOP = 13
+    PIN_SENSOR_BOTTOM = 16
     PIN_MOTOR_ENABLE = 25
     PIN_MOTOR_A = 24
     PIN_MOTOR_B = 23
@@ -90,7 +90,7 @@ class Coop(object):
         t1.start()
         t2.start()
 
-        host = 'localhost'
+        host = '192.168.1.21'
         port = 55567
         addr = (host, port)
 
@@ -246,10 +246,10 @@ class Coop(object):
  
             if (self.direction == Coop.UP and top == Coop.TRIGGERED):
                 logger.info("Top sensor triggered")
-                self.stopDoor(0)
+                self.stopDoor(1.5)
             if (self.direction == Coop.DOWN and bottom == Coop.TRIGGERED):
                 logger.info("Bottom sensor triggered")
-                self.stopDoor(1)
+                self.stopDoor(4)
 
             # Check for issues
             if self.started_motor is not None:
