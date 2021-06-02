@@ -1,0 +1,11 @@
+Adafruit-DHT==1.4.0
+astral==1.10.1
+certifi==2020.12.5
+chardet==4.0.0
+idna==2.10
+pytz==2020.5
+requests==2.25.1
+RPi.GPIO==0.7.0
+smbus==1.1.post2
+urllib3==1.26.2
+__pycache__/
